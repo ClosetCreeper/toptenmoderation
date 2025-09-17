@@ -54,123 +54,150 @@
   <div id="posts"></div>
 
   <script>
-    const container = document.getElementById("posts");
+  const container = document.getElementById("posts");
 
-    const apiToken = "d26980d19c57cf2add6fb54a82da6490feccffeba5852fa80cba456e4dbd229d"; // replace with your token
-    const containerID = "iCloud.keyninestudios.topten"; // replace with your container
-    const environment = "development"; // or "production"
+  const apiToken = "d26980d19c57cf2add6fb54a82da6490feccffeba5852fa80cba456e4dbd229d";
+  const containerID = "iCloud.keyninestudios.topten";
+  const environment = "development"; // switch to "production" when ready
 
-    async function fetchReportedPosts() {
-      const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/query?ckAPIToken=${apiToken}`;
-    
-      const body = {
-        query: {
-          recordType: "ReportedPosts"
-        },
-        resultsLimit: 50
-      };
-    
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (data.records) {
-        return data.records;
-      } else {
-        console.error("Query error:", data);
-        return [];
-      }
+  // --- Fetch all ReportedPosts ---
+  async function fetchReportedPosts() {
+    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/query?ckAPIToken=${apiToken}`;
+
+    const body = {
+      query: { recordType: "ReportedPosts" },
+      resultsLimit: 50
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.records) {
+      return data.records;
+    } else {
+      console.error("Query error:", data);
+      return [];
     }
+  }
 
-    async function updateReportedPostStatus(recordName, status) {
-      const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
-      const body = {
-        operations: [{
-          operationType: "update",
-          record: {
-            recordName,
-            recordType: "ReportedPosts",
-            fields: {
-              status: { value: status }
-            }
+  // --- Lookup a Top10PhotoEntries record ---
+  async function fetchPhotoEntry(postRecordName) {
+    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/lookup?ckAPIToken=${apiToken}`;
+    const body = { records: [{ recordName: postRecordName }] };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.records && data.records[0]) {
+      return data.records[0];
+    } else {
+      console.warn("Lookup failed:", data);
+      return null;
+    }
+  }
+
+  // --- Update ReportedPosts status ---
+  async function updateReportedPostStatus(recordName, status) {
+    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
+    const body = {
+      operations: [{
+        operationType: "update",
+        record: {
+          recordName,
+          recordType: "ReportedPosts",
+          fields: {
+            status: { value: status }
           }
-        }]
+        }
+      }]
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    console.log("Update status response:", data);
+    return data;
+  }
+
+  // --- Delete a Top10PhotoEntries record ---
+  async function deletePhoto(recordName) {
+    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
+    const body = {
+      operations: [{
+        operationType: "delete",
+        record: { recordName }
+      }]
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    console.log("Delete photo response:", data);
+    return data;
+  }
+
+  // --- Render the moderation list ---
+  async function render() {
+    const reported = await fetchReportedPosts();
+    for (const report of reported) {
+      const postRecordName = report.fields?.postRecordName?.value;
+      const photoEntry = postRecordName ? await fetchPhotoEntry(postRecordName) : null;
+
+      const div = document.createElement("div");
+      div.className = "post";
+
+      const info = document.createElement("div");
+      info.innerHTML = `
+        <p><b>Reported Post:</b> ${postRecordName || "N/A"}</p>
+        ${photoEntry?.fields?.photo?.value?.downloadURL 
+          ? `<img src="${photoEntry.fields.photo.value.downloadURL}" alt="Photo"/>`
+          : "<p>No photo found.</p>"}
+      `;
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+
+      const checkBtn = document.createElement("button");
+      checkBtn.textContent = "✅";
+      checkBtn.className = "check";
+      checkBtn.onclick = async () => {
+        await updateReportedPostStatus(report.recordName, "Closed - No Action");
+        div.remove();
       };
 
-      return fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-    }
-
-    async function deletePhoto(recordName) {
-      const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
-      const body = {
-        operations: [{
-          operationType: "delete",
-          record: { recordName }
-        }]
+      const deleteBtn = document.createElement("button");
+      deleteBtn.textContent = "❌";
+      deleteBtn.className = "delete";
+      deleteBtn.onclick = async () => {
+        if (photoEntry) {
+          await deletePhoto(photoEntry.recordName);
+        }
+        await updateReportedPostStatus(report.recordName, "Removed");
+        div.remove();
       };
 
-      return fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
+      actions.appendChild(checkBtn);
+      actions.appendChild(deleteBtn);
+
+      div.appendChild(info);
+      div.appendChild(actions);
+      container.appendChild(div);
     }
+  }
 
-    async function render() {
-      const reported = await fetchReportedPosts();
-      for (const report of reported) {
-        const postRecordName = report.fields?.postRecordName?.value;
-        const photoEntry = await fetchPhotoEntry(postRecordName);
-
-        const div = document.createElement("div");
-        div.className = "post";
-
-        const info = document.createElement("div");
-        info.innerHTML = `
-          <p><b>Reported Post:</b> ${postRecordName}</p>
-          ${photoEntry?.fields?.photo?.value?.downloadURL 
-            ? `<img src="${photoEntry.fields.photo.value.downloadURL}" alt="Photo"/>`
-            : "<p>No photo found.</p>"}
-        `;
-
-        const actions = document.createElement("div");
-        actions.className = "actions";
-
-        const checkBtn = document.createElement("button");
-        checkBtn.textContent = "✅";
-        checkBtn.className = "check";
-        checkBtn.onclick = async () => {
-          await updateReportedPostStatus(report.recordName, "Closed - No Action");
-          div.remove();
-        };
-
-        const deleteBtn = document.createElement("button");
-        deleteBtn.textContent = "❌";
-        deleteBtn.className = "delete";
-        deleteBtn.onclick = async () => {
-          if (photoEntry) {
-            await deletePhoto(photoEntry.recordName);
-          }
-          await updateReportedPostStatus(report.recordName, "Removed");
-          div.remove();
-        };
-
-        actions.appendChild(checkBtn);
-        actions.appendChild(deleteBtn);
-
-        div.appendChild(info);
-        div.appendChild(actions);
-        container.appendChild(div);
-      }
-    }
-
-    render();
-  </script>
+  render();
+</script>
 </body>
 </html>
