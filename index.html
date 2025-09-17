@@ -62,34 +62,26 @@
 
     async function fetchReportedPosts() {
       const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/query?ckAPIToken=${apiToken}`;
-
+    
       const body = {
-        recordType: "ReportedPosts",
+        query: {
+          recordType: "ReportedPosts"
+        },
         resultsLimit: 50
       };
-
+    
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
       const data = await res.json();
-      return data.records || [];
-    }
-
-    async function fetchPhotoEntry(postRecordName) {
-      const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/lookup?ckAPIToken=${apiToken}`;
-
-      const body = { records: [{ recordName: postRecordName }] };
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-
-      const data = await res.json();
-      return data.records && data.records[0];
+      if (data.records) {
+        return data.records;
+      } else {
+        console.error("Query error:", data);
+        return [];
+      }
     }
 
     async function updateReportedPostStatus(recordName, status) {
