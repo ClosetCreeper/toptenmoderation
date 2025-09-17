@@ -2,202 +2,64 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Top 10 – Reported Posts Moderation</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo Moderation</title>
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #ffffff;
-      color: #111;
-      margin: 0;
-      padding: 20px;
-    }
-    h1 {
-      color: #008000;
-      text-align: center;
-    }
-    .post {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #f9f9f9;
-      border-radius: 12px;
-      padding: 15px;
-      margin: 10px auto;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      max-width: 700px;
-    }
-    .post img {
-      max-width: 120px;
-      border-radius: 10px;
-    }
-    .actions button {
-      font-size: 18px;
-      padding: 6px 12px;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-left: 6px;
-    }
-    .check {
-      background-color: #28a745;
-      color: white;
-    }
-    .delete {
-      background-color: #dc3545;
-      color: white;
-    }
+    body { font-family: Arial, sans-serif; background: #f8f8f8; padding: 20px; }
+    .photo { border: 1px solid #ddd; background: white; padding: 10px; margin: 10px; display: inline-block; }
+    img { max-width: 300px; display: block; margin-bottom: 10px; }
+    button { margin-right: 10px; }
   </style>
 </head>
 <body>
-  <h1>Reported Posts</h1>
-  <div id="posts"></div>
+  <h1>Photo Moderation Dashboard</h1>
+  <div id="photos"></div>
 
   <script>
-  const container = document.getElementById("posts");
+    async function loadPhotos() {
+      const res = await fetch("/api/photos");
+      const data = await res.json();
+      const container = document.getElementById("photos");
+      container.innerHTML = "";
 
-  const apiToken = "d26980d19c57cf2add6fb54a82da6490feccffeba5852fa80cba456e4dbd229d";
-  const containerID = "iCloud.keyninestudios.topten";
-  const environment = "development"; // switch to "production" when ready
+      if (!data.records) {
+        container.innerHTML = "<p>No photos found.</p>";
+        return;
+      }
 
-  // --- Fetch all ReportedPosts ---
-  async function fetchReportedPosts() {
-    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/query?ckAPIToken=${apiToken}`;
-
-    const body = {
-      query: { recordType: "ReportedPosts" },
-      resultsLimit: 50
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.records) {
-      return data.records;
-    } else {
-      console.error("Query error:", data);
-      return [];
+      data.records.forEach(record => {
+        const div = document.createElement("div");
+        div.className = "photo";
+        const url = record.fields?.photo?.value?.downloadURL || "";
+        div.innerHTML = `
+          <img src="${url}" alt="Photo"/>
+          <p>ID: ${record.recordName}</p>
+          <button onclick="approve('${record.recordName}')">Approve</button>
+          <button onclick="reject('${record.recordName}')">Reject</button>
+        `;
+        container.appendChild(div);
+      });
     }
-  }
 
-  // --- Lookup a Top10PhotoEntries record ---
-  async function fetchPhotoEntry(postRecordName) {
-    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/lookup?ckAPIToken=${apiToken}`;
-    const body = { records: [{ recordName: postRecordName }] };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (data.records && data.records[0]) {
-      return data.records[0];
-    } else {
-      console.warn("Lookup failed:", data);
-      return null;
+    async function approve(recordName) {
+      await fetch("/api/photos/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordName }),
+      });
+      loadPhotos();
     }
-  }
 
-  // --- Update ReportedPosts status ---
-  async function updateReportedPostStatus(recordName, status) {
-    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
-    const body = {
-      operations: [{
-        operationType: "update",
-        record: {
-          recordName,
-          recordType: "ReportedPosts",
-          fields: {
-            status: { value: status }
-          }
-        }
-      }]
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    console.log("Update status response:", data);
-    return data;
-  }
-
-  // --- Delete a Top10PhotoEntries record ---
-  async function deletePhoto(recordName) {
-    const url = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public/records/modify?ckAPIToken=${apiToken}`;
-    const body = {
-      operations: [{
-        operationType: "delete",
-        record: { recordName }
-      }]
-    };
-
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    console.log("Delete photo response:", data);
-    return data;
-  }
-
-  // --- Render the moderation list ---
-  async function render() {
-    const reported = await fetchReportedPosts();
-    for (const report of reported) {
-      const postRecordName = report.fields?.postRecordName?.value;
-      const photoEntry = postRecordName ? await fetchPhotoEntry(postRecordName) : null;
-
-      const div = document.createElement("div");
-      div.className = "post";
-
-      const info = document.createElement("div");
-      info.innerHTML = `
-        <p><b>Reported Post:</b> ${postRecordName || "N/A"}</p>
-        ${photoEntry?.fields?.photo?.value?.downloadURL 
-          ? `<img src="${photoEntry.fields.photo.value.downloadURL}" alt="Photo"/>`
-          : "<p>No photo found.</p>"}
-      `;
-
-      const actions = document.createElement("div");
-      actions.className = "actions";
-
-      const checkBtn = document.createElement("button");
-      checkBtn.textContent = "✅";
-      checkBtn.className = "check";
-      checkBtn.onclick = async () => {
-        await updateReportedPostStatus(report.recordName, "Closed - No Action");
-        div.remove();
-      };
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.textContent = "❌";
-      deleteBtn.className = "delete";
-      deleteBtn.onclick = async () => {
-        if (photoEntry) {
-          await deletePhoto(photoEntry.recordName);
-        }
-        await updateReportedPostStatus(report.recordName, "Removed");
-        div.remove();
-      };
-
-      actions.appendChild(checkBtn);
-      actions.appendChild(deleteBtn);
-
-      div.appendChild(info);
-      div.appendChild(actions);
-      container.appendChild(div);
+    async function reject(recordName) {
+      await fetch("/api/photos/reject", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recordName }),
+      });
+      loadPhotos();
     }
-  }
 
-  render();
-</script>
+    loadPhotos();
+  </script>
 </body>
 </html>
