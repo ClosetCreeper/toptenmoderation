@@ -3,63 +3,64 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Photo Moderation</title>
+  <title>Top 10 Moderation Dashboard</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #f8f8f8; padding: 20px; }
-    .photo { border: 1px solid #ddd; background: white; padding: 10px; margin: 10px; display: inline-block; }
+    body { font-family: -apple-system, sans-serif; padding: 20px; background: #f8f8f8; }
+    .post { background: white; padding: 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     img { max-width: 300px; display: block; margin-bottom: 10px; }
-    button { margin-right: 10px; }
+    button { margin-right: 10px; padding: 5px 10px; font-size: 16px; }
   </style>
 </head>
 <body>
-  <h1>Photo Moderation Dashboard</h1>
-  <div id="photos"></div>
+  <h1>Top 10 Moderation Dashboard</h1>
+  <div id="posts"></div>
 
   <script>
-    async function loadPhotos() {
-      const res = await fetch("/api/photos");
-      const data = await res.json();
-      const container = document.getElementById("photos");
+    async function loadPosts() {
+      const container = document.getElementById("posts");
       container.innerHTML = "";
 
-      if (!data.records) {
-        container.innerHTML = "<p>No photos found.</p>";
-        return;
-      }
+      const res = await fetch("/api/photos");
+      const photos = await res.json();
 
-      data.records.forEach(record => {
+      photos.forEach(async (photo) => {
         const div = document.createElement("div");
-        div.className = "photo";
-        const url = record.fields?.photo?.value?.downloadURL || "";
+        div.className = "post";
+
         div.innerHTML = `
-          <img src="${url}" alt="Photo"/>
-          <p>ID: ${record.recordName}</p>
-          <button onclick="approve('${record.recordName}')">Approve</button>
-          <button onclick="reject('${record.recordName}')">Reject</button>
+          <p><b>Reported Post:</b> ${photo.postRecordName || "N/A"}</p>
+          ${photo.url ? `<img src="${photo.url}" alt="Photo"/>` : "<p>No photo found</p>"}
         `;
+
+        const approveBtn = document.createElement("button");
+        approveBtn.textContent = "✅ Approve";
+        approveBtn.onclick = async () => {
+          await fetch("/api/photos/approve", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reportRecordName: photo.postRecordName }),
+          });
+          div.remove();
+        };
+
+        const rejectBtn = document.createElement("button");
+        rejectBtn.textContent = "❌ Reject";
+        rejectBtn.onclick = async () => {
+          await fetch("/api/photos/reject", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photoRecordName: photo.recordName, reportRecordName: photo.postRecordName }),
+          });
+          div.remove();
+        };
+
+        div.appendChild(approveBtn);
+        div.appendChild(rejectBtn);
         container.appendChild(div);
       });
     }
 
-    async function approve(recordName) {
-      await fetch("/api/photos/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordName }),
-      });
-      loadPhotos();
-    }
-
-    async function reject(recordName) {
-      await fetch("/api/photos/reject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recordName }),
-      });
-      loadPhotos();
-    }
-
-    loadPhotos();
+    loadPosts();
   </script>
 </body>
 </html>
