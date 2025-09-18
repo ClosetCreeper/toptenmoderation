@@ -9,6 +9,7 @@
     .post { background: white; padding: 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
     img { max-width: 300px; display: block; margin-bottom: 10px; }
     button { margin-right: 10px; padding: 5px 10px; font-size: 16px; }
+    pre { background: #eee; padding: 10px; overflow-x: auto; }
   </style>
 </head>
 <body>
@@ -20,44 +21,63 @@
       const container = document.getElementById("posts");
       container.innerHTML = "";
 
-      const res = await fetch("/api/photos");
-      const photos = await res.json();
+      try {
+        const res = await fetch("/api/photos");
+        const records = await res.json();
 
-      photos.forEach(async (photo) => {
-        const div = document.createElement("div");
-        div.className = "post";
+        if (!records.length) {
+          container.innerHTML = "<p>No records returned from CloudKit.</p>";
+          return;
+        }
 
-        div.innerHTML = `
-          <p><b>Reported Post:</b> ${photo.postRecordName || "N/A"}</p>
-          ${photo.url ? `<img src="${photo.url}" alt="Photo"/>` : "<p>No photo found</p>"}
-        `;
+        records.forEach((record) => {
+          const div = document.createElement("div");
+          div.className = "post";
 
-        const approveBtn = document.createElement("button");
-        approveBtn.textContent = "✅ Approve";
-        approveBtn.onclick = async () => {
-          await fetch("/api/photos/approve", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reportRecordName: photo.postRecordName }),
-          });
-          div.remove();
-        };
+          // Safe extraction of fields
+          const photoURL = record.fields?.photo?.value?.downloadURL || "https://via.placeholder.com/300?text=No+Photo";
+          const postName = record.fields?.postRecordName?.value || "N/A";
 
-        const rejectBtn = document.createElement("button");
-        rejectBtn.textContent = "❌ Reject";
-        rejectBtn.onclick = async () => {
-          await fetch("/api/photos/reject", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ photoRecordName: photo.recordName, reportRecordName: photo.postRecordName }),
-          });
-          div.remove();
-        };
+          div.innerHTML = `
+            <p><b>Reported Post:</b> ${postName}</p>
+            <img src="${photoURL}" alt="Photo"/>
+            <pre>${JSON.stringify(record.fields, null, 2)}</pre>
+          `;
 
-        div.appendChild(approveBtn);
-        div.appendChild(rejectBtn);
-        container.appendChild(div);
-      });
+          // Approve button (update ReportedPosts)
+          const approveBtn = document.createElement("button");
+          approveBtn.textContent = "✅ Approve";
+          approveBtn.onclick = async () => {
+            if (postName === "N/A") return alert("No postRecordName available");
+            await fetch("/api/photos/approve", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ reportRecordName: postName }),
+            });
+            div.remove();
+          };
+
+          // Reject button (delete Top10PhotoEntries + update ReportedPosts)
+          const rejectBtn = document.createElement("button");
+          rejectBtn.textContent = "❌ Reject";
+          rejectBtn.onclick = async () => {
+            if (postName === "N/A") return alert("No postRecordName available");
+            await fetch("/api/photos/reject", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ photoRecordName: record.recordName, reportRecordName: postName }),
+            });
+            div.remove();
+          };
+
+          div.appendChild(approveBtn);
+          div.appendChild(rejectBtn);
+          container.appendChild(div);
+        });
+      } catch (err) {
+        container.innerHTML = `<p style="color:red;">Error loading posts: ${err.message}</p>`;
+        console.error(err);
+      }
     }
 
     loadPosts();
