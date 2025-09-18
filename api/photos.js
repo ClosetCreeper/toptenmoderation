@@ -9,28 +9,74 @@ export default async function handler(req, res) {
   const BASE_URL = `https://api.apple-cloudkit.com/database/1/${containerID}/${environment}/public`;
 
   try {
-    const response = await fetch(`${BASE_URL}/records/query`, {
+    // 1️⃣ Query ReportedPosts with active reports
+    const reportedRes = await fetch(`${BASE_URL}/records/query`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiToken}`,
       },
       body: JSON.stringify({
-        query: { recordType: "Top10PhotoEntries" },
-        desiredKeys: ["photo", "postRecordName"],
+        query: {
+          recordType: "ReportedPosts",
+          // optional: filter out closed/removed reports
+          filterBy: [
+            {
+              fieldName: "status",
+              comparator: "NOT_EQUAL",
+              fieldValue: { value: "Closed - No Action" },
+            },
+            {
+              fieldName: "status",
+              comparator: "NOT_EQUAL",
+              fieldValue: { value: "Removed" },
+            },
+          ],
+        },
+        desiredKeys: ["postRecordName", "status"],
       }),
     });
 
-    const data = await response.json();
+    const reportedData = await reportedRes.json();
+    const reports = reportedData.records || [];
 
-    const photos = (data.records || []).map((r) => ({
-      recordName: r.recordName,
-      postRecordName: r.fields?.postRecordName?.value || null,
-      url: r.fields?.photo?.value?.downloadURL || null,
-    }));
+    // 2️⃣ For each reported post, get its photo
+    const photoPromises = reports.map(async (report) => {
+      const postRecordName = report.fields?.postRecordName?.value;
+      if (!postRecordName) return null;
+
+      // Query Top10PhotoEntries for this recordName
+      const photoRes = await fetch(`${BASE_URL}/records/lookup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiToken}`,
+        },
+        body: JSON.stringify({ recordNames: [postRecordName] }),
+      });
+
+      const photoData = await photoRes.json();
+      const photoRecord = photoData.records?.[0];
+
+      if (!photoRecord) return null;
+
+      const url = photoRecord.fields?.photo?.value?.downloadURL || null;
+
+      return {
+        reportRecordName: report.recordName,
+        photoRecordName: photoRecord.recordName,
+        postRecordName,
+        status: report.fields?.status?.value || "Unknown",
+        url,
+        fields: photoRecord.fields,
+      };
+    });
+
+    const photos = (await Promise.all(photoPromises)).filter(Boolean);
 
     res.status(200).json(photos);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 }
